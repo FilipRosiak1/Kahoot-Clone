@@ -1,0 +1,295 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kahoot Clone</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div id="main">
+        <div class="cm-background-anim"></div>
+        <div class="join-game">
+            <div class="cm-title">Witaj w imprezowym kahoot'cie</div>
+            <div class="cm-box">
+                <div class="cm-container">
+                    <input type="text" id="username" placeholder="PODAJ IMIĘ GRACZA">
+                    <button id="joinGameButton" onclick="joinGame()">DOŁĄCZ DO GRY</button>
+                </div>
+            </div>
+            <!-- <button onclick="startGame()">Ropocznij grę</button> -->
+            <!-- <div id="question-container" style="display:none;">
+                <h2 id="question"></h2>
+                <ul id="options"></ul>
+                <button onclick="submitAnswer()">Submit Answer</button>
+            </div> -->
+        </div>
+        <div class="start-game">
+            <div class="cm-title">Zaczekaj na resztę!</div>
+            <div class="cm-box">
+                <div class="cm-container">
+                    <div class="cm-text">
+                        LISTA GRACZY:
+                    </div>
+                    <div id="players-container"></div>
+                </div>
+                <div class="cm-disclaimer">
+                    Upewnij się, że wszyscy gracze dołączyli do poczekalni, następnie rozpocznij grę!
+                </div>
+                <button id="startGameButton" onclick="startGame()">Ropocznij grę</button>
+            </div>
+        </div>
+        <div class="actual-game">
+            <div id="question-container">
+                <div id="question"></div>
+                <div id="options"></div>
+            </div>
+        </div>
+        <div class="scoreboard">
+            <div class="cm-title">Wyniki końcowe!</div>
+            <div class="cm-box">
+                <div class="cm-container">
+                    <div class="cm-text">
+                        PUNKTACJA:
+                    </div>
+                    <div id="scoreboard"></div>
+                </div>
+                <button id="startNewGameButton" onclick="scrollSlide(2)">NOWA GRA</button>
+            </div>
+        </div>
+        <!-- <div id="popover" class="active"> -->
+        <div id="popover">
+        <!-- <div> -->
+            <div class="cm-box">
+                <div id="shotglass-alert">
+
+                </div>
+                <div id="scoreboard-alert">
+                    <div class="cm-container">
+                        <div class="cm-text">
+                            Punktacja:
+                        </div>
+                        <div id="player-points"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/3.0.3/socket.io.js"></script>
+    <script>
+        var socket = io.connect('http://' + document.domain + ':' + 5500);
+        var playerId;
+        var answered = false;  // Flag to ensure 'all_players_answered' is handled only once
+        var canGetID = false;
+        var joined = false;
+        var firstQuestion = true;
+
+        socket.on('connect', function() {
+            socket.emit('message', {'data': 'Connected'});
+        });
+
+        socket.on('message', function(data) {
+            console.log(data.data);
+        });
+
+        socket.on('get_id', function(data) {
+            if (joined) {
+                playerId = data.playerId;
+            }
+        });
+
+        socket.on('update_players', function(data) {
+            updatePlayers(data.players);
+        });
+
+        socket.on('new_question', function(data) {
+            showQuestion(data.question, data.options, data.number);
+            
+            if(firstQuestion) {
+                firstQuestion = false;
+                return;
+            }
+
+            hideShotglassAlert();
+            
+            setTimeout(() => {
+                hideScoreboard();
+            }, 3000)
+        });
+
+        socket.on('game_started', function(data) {
+            if (joined) {
+                scrollSlide(3);
+            }
+        });
+
+        socket.on('game_joined', function(data) {
+            joined = true;
+            scrollSlide(2);
+        });
+
+        socket.on('game_over', function(data) {
+            answered = false;
+
+            if (joined) {
+                scrollSlide(4);
+                hideShotglassAlert();
+                updateFinalScoreboard(data.players);
+                // alert('Koniec gry. Wynik końcowy:\n' + formatScores(data.players));
+            }
+        });
+
+        socket.on('lobby_full', function(data) {
+            alert(data.message);
+        });
+
+        socket.on('all_players_answered', function() {
+            answered = false;
+            showScoreboard()
+        });
+
+        socket.on('didnt_drink', function(data) {
+            if (joined) {
+                showShotglassAlert(data.id)
+            }
+        });
+
+        const main = document.getElementById('main');
+
+        const showShotglassAlert = (id) => {
+            const popover = document.getElementById('popover');
+            const shotglassAlert = document.getElementById('shotglass-alert');
+            const scoreboardAlert = document.getElementById('scoreboard-alert');
+            popover.classList.add('active')
+
+            shotglassAlert.innerHTML = `Gracz o id: ${id} nie dał kieliszka\n`
+
+            scoreboardAlert.classList.remove('active')
+            shotglassAlert.classList.add('active')
+        }
+
+        const hideShotglassAlert = () => {
+            const popover = document.getElementById('popover');
+            const shotglassAlert = document.getElementById('shotglass-alert');
+            const scoreboardAlert = document.getElementById('scoreboard-alert');
+
+            scoreboardAlert.classList.add('active')
+            shotglassAlert.classList.remove('active')
+            popover.classList.remove('active')
+        }
+        
+        const showScoreboard = () => {
+            const popover = document.getElementById('popover');
+            const questionContainer = document.getElementById('question-container');
+            const shotglassAlert = document.getElementById('shotglass-alert');
+            const scoreboardAlert = document.getElementById('scoreboard-alert');
+
+            questionContainer.classList.add('deactivate')
+            shotglassAlert.classList.remove('active')
+            scoreboardAlert.classList.add('active')
+            popover.classList.add('active')
+        }
+        
+        const hideScoreboard = () => {
+            const popover = document.getElementById('popover');
+            const questionContainer = document.getElementById('question-container');
+
+            
+            questionContainer.classList.remove('deactivate')
+            popover.classList.remove('active')
+        }
+        
+        
+        const scrollSlide = (slideNum) => {
+            main.scrollTo({
+                left: (slideNum - 1) * main.offsetWidth,
+                behavior: 'smooth'
+            });
+        }
+        
+        function joinGame() {
+            var username = document.getElementById('username').value;
+            if (username.trim() !== '' && !joined) {
+                // canGetID = true;
+                // canSetUsername = false;
+                socket.emit('join', {'username': username});
+            }
+        }
+
+        function startGame() {
+            socket.emit('start_game');
+        }
+
+        function submitAnswer(selectedOption) {
+            console.log(selectedOption);
+            if (selectedOption && !answered) {
+                answered = true;
+                var answer = selectedOption;
+                socket.emit('answer', {'player_id': playerId, 'answer': answer});
+                clearOptions();
+            }
+        }
+
+        function updatePlayers(players) {
+            var playersContainer = document.getElementById('players-container');
+            var playerPoints = document.getElementById('player-points');
+            playersContainer.innerHTML = ''
+            playerPoints.innerHTML = ''
+
+            players.sort((a, b) => {
+                return a.score < b.score ? 1 : -1;
+            })
+
+            players.forEach((player, index) => {
+                playersContainer.innerHTML += '<p>' + player.id + ': ' + player.username + '</p>';
+                playerPoints.innerHTML += `<p>${player.id}: ${player.username} - ${player.score}</p>`;
+                // playersContainer.innerHTML += '<p>' + player.username + '(' + player.id + ')' + ': ' + player.score + '</p>';
+            });
+        }
+
+        function showQuestion(question, options, number) {
+            var questionElement = document.getElementById('question');
+            var optionsElement = document.getElementById('options');
+
+            questionElement.textContent = number + '. ' + question;
+            optionsElement.innerHTML = '';
+            optionsElement.classList.remove('cm-loading')
+
+            options.forEach(function(option, index) {
+                optionsElement.innerHTML += `<div onclick="submitAnswer('${option}')">${option}</div>`;
+            });
+        }
+
+        function clearOptions() {
+            var question = document.getElementById('question');
+            var options = document.getElementById('options');
+            options.classList.add('cm-loading')
+            question.innerHTML = "Oczekiwanie na pozostałych graczy."
+            options.innerHTML = `<div class="lds-ring"><div></div><div></div><div></div><div></div></div>`;
+        }
+
+        const updateFinalScoreboard = (players) => {
+            var scoreboard = document.getElementById('scoreboard');
+            scoreboard.innerHTML = ''
+
+            players.sort((a, b) => {
+                return a.score < b.score ? 1 : -1;
+            })
+
+            players.forEach((player, index) => {
+                scoreboard.innerHTML += `<p>${index + 1}. miejsce: ${player.username} - ${player.score}</p>`;
+            });
+        }
+
+        function formatScores(players) {
+            var scores = '';
+            players.forEach(function(player) {
+                scores += player.username + ': ' + player.score + '\n';
+            });
+            return scores;
+        }
+    </script>
+</body>
+</html>
